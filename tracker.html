@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Трекер">
+  <title>Мій трекер</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { background: #0F0F14; color: #E8E8F0; font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif; padding-bottom: env(safe-area-inset-bottom); }
+    button, input, select { font-family: inherit; }
+    select option { background: #1A1A2E; color: #E8E8F0; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    const CATEGORIES = {
+      work: { label: "Робота", color: "#6C63FF", light: "#6C63FF22" },
+      life: { label: "Життя", color: "#00C896", light: "#00C89622" },
+      creative: { label: "Творчість", color: "#FF6B6B", light: "#FF6B6B22" },
+    };
+    const TASK_TYPES = {
+      once: { label: "Разова", icon: "✓" },
+      big: { label: "Велика", icon: "◎" },
+      recurring: { label: "Постійна", icon: "∞" },
+    };
+
+    function formatDate(d) { return d.toISOString().split("T")[0]; }
+    function getLast14Days() {
+      const days = [];
+      for (let i = 13; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(formatDate(d)); }
+      return days;
+    }
+
+    const INITIAL_TASKS = [
+      { id: 1001, title: "Кліп гематома", category: "creative", type: "big", done: true, sessions: 2, estimatedMin: 90 },
+      { id: 1002, title: "Рефи попсарю", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1003, title: "Курс зйомка", category: "creative", type: "big", done: true, sessions: 1, estimatedMin: 60 },
+      { id: 1005, title: "Вішліст ДН", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 20 },
+      { id: 1006, title: "Організувати ДН", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 45 },
+      { id: 1007, title: "Фіти список", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1009, title: "TikTok", category: "creative", type: "recurring", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1010, title: "Текст на новий трек", category: "creative", type: "big", done: false, sessions: 1, estimatedMin: 60 },
+      { id: 1011, title: "Стоматолог", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 15 },
+      { id: 1012, title: "Погенерити план розвитку / контент план / образ", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 60 },
+      { id: 1013, title: "Сковорідка", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1014, title: "Вокал", category: "creative", type: "big", done: false, sessions: 1, estimatedMin: 60 },
+      { id: 1016, title: "Claude + YouTube", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1017, title: "Запис до гастро", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 15 },
+      { id: 1018, title: "Фізкультура", category: "life", type: "recurring", done: false, sessions: 2, estimatedMin: 60 },
+    ];
+
+    function getInitialLog() {
+      const now = new Date();
+      const diffToMon = (now.getDay() + 6) % 7;
+      const mon = new Date(now); mon.setDate(now.getDate() - diffToMon);
+      const tue = new Date(mon); tue.setDate(mon.getDate() + 1);
+      const wed = new Date(mon); wed.setDate(mon.getDate() + 2);
+      const monStr = formatDate(mon);
+      const tueStr = formatDate(tue);
+      const wedStr = formatDate(wed);
+      return [
+        { date: monStr, taskId: 1003, category: "creative", id: monStr + "-1003" },
+        { date: tueStr, taskId: 1001, category: "creative", id: tueStr + "-1001" },
+        { date: tueStr, taskId: 1018, category: "life", id: tueStr + "-1018" },
+        { date: wedStr, taskId: 1010, category: "creative", id: wedStr + "-1010" },
+        { date: wedStr, taskId: 1001, category: "creative", id: wedStr + "-1001-2" },
+        { date: wedStr, taskId: 1018, category: "life", id: wedStr + "-1018-2" },
+      ];
+    }
+
+    function Tracker() {
+      const [tasks, setTasks] = useState([]);
+      const [log, setLog] = useState([]);
+      const [loaded, setLoaded] = useState(false);
+      const [saved, setSaved] = useState(true);
+      const [view, setView] = useState("tasks");
+      const [newTask, setNewTask] = useState({ title: "", category: "work", type: "once", estimatedMin: 30 });
+      const [filterCat, setFilterCat] = useState("all");
+      const [filterType, setFilterType] = useState("all");
+      const [editTask, setEditTask] = useState(null);
+      const [selectedDay, setSelectedDay] = useState(null);
+
+      const days = getLast14Days();
+
+      useEffect(() => {
+        try { const t = localStorage.getItem("tracker-tasks"); setTasks(t ? JSON.parse(t) : INITIAL_TASKS); } catch { setTasks(INITIAL_TASKS); }
+        try { const l = localStorage.getItem("tracker-log"); setLog(l ? JSON.parse(l) : getInitialLog()); } catch { setLog(getInitialLog()); }
+        setLoaded(true);
+      }, []);
+
+      useEffect(() => { if (loaded) setSaved(false); }, [tasks]);
+      useEffect(() => { if (loaded) setSaved(false); }, [log]);
+
+      function saveAll() {
+        try {
+          localStorage.setItem("tracker-tasks", JSON.stringify(tasks));
+          localStorage.setItem("tracker-log", JSON.stringify(log));
+          setSaved(true);
+        } catch(e) { alert("Помилка: " + e.message); }
+      }
+
+      const dayStats = useMemo(() => days.map(day => {
+        const entries = log.filter(l => l.date === day);
+        const byCategory = {};
+        Object.keys(CATEGORIES).forEach(c => { byCategory[c] = entries.filter(e => e.category === c).length; });
+        return { day, total: entries.length, byCategory };
+      }), [log]);
+
+      const maxDay = Math.max(...dayStats.map(d => d.total), 1);
+
+      function logSession(task) {
+        const today = formatDate(new Date());
+        setLog(prev => [...prev, { date: today, taskId: task.id, category: task.category, id: today + "-" + Date.now() }]);
+        if (task.type === "once") setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: true } : t));
+        else setTasks(prev => prev.map(t => t.id === task.id ? { ...t, sessions: t.sessions + 1 } : t));
+      }
+
+      function addTask() {
+        if (!newTask.title.trim()) return;
+        setTasks(prev => [...prev, { ...newTask, id: Date.now(), done: false, sessions: 0 }]);
+        setNewTask({ title: "", category: "work", type: "once", estimatedMin: 30 });
+        setView("tasks");
+      }
+
+      function deleteTask(id) { setTasks(prev => prev.filter(t => t.id !== id)); }
+
+      function saveEdit() {
+        if (!editTask || !editTask.title.trim()) return;
+        setTasks(prev => prev.map(t => t.id === editTask.id ? editTask : t));
+        setEditTask(null);
+      }
+
+      const filtered = tasks.filter(t => (filterCat === "all" || t.category === filterCat) && (filterType === "all" || t.type === filterType) && !t.done);
+      const done = tasks.filter(t => t.done);
+      const todayCount = log.filter(l => l.date === formatDate(new Date())).length;
+
+      if (!loaded) return null;
+
+      return (
+        <div style={{ minHeight: "100vh", background: "#0F0F14", color: "#E8E8F0" }}>
+
+          <div style={{ background: "linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)", borderBottom: "1px solid #ffffff10", padding: "20px 20px 14px", paddingTop: "calc(20px + env(safe-area-inset-top))", position: "sticky", top: 0, zIndex: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 10, color: "#8888AA", letterSpacing: 2, textTransform: "uppercase", marginBottom: 2 }}>
+                  {new Date().toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" })}
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>
+                  Мій трекер
+                  <span style={{ marginLeft: 8, fontSize: 12, background: todayCount > 0 ? "#6C63FF33" : "#ffffff10", color: todayCount > 0 ? "#A09FFF" : "#666", padding: "2px 8px", borderRadius: 20 }}>
+                    {todayCount} сьогодні
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setView("add")} style={{ background: "linear-gradient(135deg, #6C63FF, #8B5CF6)", border: "none", borderRadius: 12, color: "#fff", padding: "10px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>+ Задача</button>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+              {[["tasks","Задачі"],["chart","Графік"]].map(([v,l]) => (
+                <button key={v} onClick={() => setView(v)} style={{ background: view === v ? "#6C63FF22" : "transparent", border: "1px solid " + (view === v ? "#6C63FF" : "#ffffff15"), borderRadius: 8, color: view === v ? "#A09FFF" : "#8888AA", padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 500 }}>{l}</button>
+              ))}
+            </div>
+            {!saved && (
+              <button onClick={saveAll} style={{ display: "block", width: "100%", marginTop: 10, minHeight: 46, background: "linear-gradient(135deg, #00C896, #00A87A)", border: "none", borderRadius: 12, color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                💾 Зберегти зміни
+              </button>
+            )}
+            {saved && <div style={{ marginTop: 8, textAlign: "center", fontSize: 11, color: "#00C89688" }}>✓ Збережено</div>}
+          </div>
+
+          <div style={{ padding: "16px 20px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
+
+            {view === "add" && (
+              <div style={{ background: "#1A1A2E", borderRadius: 16, padding: 20, border: "1px solid #ffffff10" }}>
+                <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>Нова задача</div>
+                <input placeholder="Назва задачі..." value={newTask.title} onChange={e => setNewTask(p => ({...p, title: e.target.value}))}
+                  style={{ width: "100%", background: "#0F0F14", border: "1px solid #ffffff15", borderRadius: 10, padding: "12px 14px", color: "#E8E8F0", fontSize: 15, marginBottom: 14, outline: "none" }} />
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Категорія</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {Object.entries(CATEGORIES).map(([k, v]) => (
+                      <button key={k} onClick={() => setNewTask(p => ({...p, category: k}))} style={{ flex: 1, background: newTask.category === k ? v.light : "transparent", border: "1px solid " + (newTask.category === k ? v.color : "#ffffff15"), borderRadius: 8, color: newTask.category === k ? v.color : "#8888AA", padding: "7px 2px", fontSize: 12, cursor: "pointer" }}>{v.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Тип</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {Object.entries(TASK_TYPES).map(([k, v]) => (
+                      <button key={k} onClick={() => setNewTask(p => ({...p, type: k}))} style={{ flex: 1, background: newTask.type === k ? "#ffffff15" : "transparent", border: "1px solid " + (newTask.type === k ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: newTask.type === k ? "#E8E8F0" : "#8888AA", padding: "7px 2px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Час (хв)</div>
+                  <input type="number" min="5" step="5" value={newTask.estimatedMin} onChange={e => setNewTask(p => ({...p, estimatedMin: +e.target.value}))}
+                    style={{ width: 90, background: "#0F0F14", border: "1px solid #ffffff15", borderRadius: 10, padding: "8px 12px", color: "#E8E8F0", fontSize: 14, outline: "none" }} />
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={addTask} style={{ flex: 1, minHeight: 44, background: "linear-gradient(135deg, #6C63FF, #8B5CF6)", border: "none", borderRadius: 10, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Додати</button>
+                  <button onClick={() => setView("tasks")} style={{ flex: 1, minHeight: 44, background: "transparent", border: "1px solid #ffffff20", borderRadius: 10, color: "#8888AA", fontSize: 14, cursor: "pointer" }}>Скасувати</button>
+                </div>
+              </div>
+            )}
+
+            {view === "tasks" && (
+              <>
+                <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => setFilterCat("all")} style={{ background: filterCat === "all" ? "#ffffff15" : "transparent", border: "1px solid " + (filterCat === "all" ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterCat === "all" ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Всі</button>
+                  {Object.entries(CATEGORIES).map(([k, v]) => (
+                    <button key={k} onClick={() => setFilterCat(k)} style={{ background: filterCat === k ? v.light : "transparent", border: "1px solid " + (filterCat === k ? v.color : "#ffffff15"), borderRadius: 8, color: filterCat === k ? v.color : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>● {v.label}</button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+                  <button onClick={() => setFilterType("all")} style={{ background: filterType === "all" ? "#ffffff15" : "transparent", border: "1px solid " + (filterType === "all" ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterType === "all" ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Всі типи</button>
+                  {Object.entries(TASK_TYPES).map(([k, v]) => (
+                    <button key={k} onClick={() => setFilterType(k)} style={{ background: filterType === k ? "#ffffff15" : "transparent", border: "1px solid " + (filterType === k ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterType === k ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {filtered.map(task => {
+                    const cat = CATEGORIES[task.category];
+                    const type = TASK_TYPES[task.type];
+                    const todaySessions = log.filter(l => l.date === formatDate(new Date()) && l.taskId === task.id).length;
+                    return (
+                      <div key={task.id} style={{ background: "#1A1A2E", border: "1px solid " + cat.color + "30", borderLeft: "3px solid " + cat.color, borderRadius: 12, padding: "14px 14px" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+                          <div style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, background: cat.light, color: cat.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>{type.icon}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 3, lineHeight: 1.3 }}>{task.title}</div>
+                            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 11, color: cat.color, background: cat.light, padding: "2px 7px", borderRadius: 20 }}>{cat.label}</span>
+                              <span style={{ fontSize: 11, color: "#8888AA" }}>{type.label} · {task.estimatedMin}хв</span>
+                              {task.sessions > 0 && <span style={{ fontSize: 11, color: "#8888AA" }}>{task.sessions} сес.</span>}
+                              {todaySessions > 0 && <span style={{ fontSize: 11, color: "#00C896", background: "#00C89620", padding: "2px 7px", borderRadius: 20 }}>✓ ×{todaySessions}</span>}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button onClick={() => setEditTask({...task})} style={{ width: 38, height: 38, borderRadius: 9, background: "#ffffff08", border: "1px solid #ffffff12", color: "#8888AA", fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✏️</button>
+                            <button onClick={() => deleteTask(task.id)} style={{ width: 38, height: 38, borderRadius: 9, background: "transparent", border: "1px solid #ffffff0a", color: "#555", fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={() => logSession(task)} style={{ flex: 1, minHeight: 44, background: cat.color + "22", border: "1px solid " + cat.color + "50", borderRadius: 10, color: cat.color, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                            {task.type === "once" ? "✓ Виконано" : "＋ Сесія"}
+                          </button>
+                          {task.type === "big" && (
+                            <button onClick={() => { logSession(task); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: true } : t)); }}
+                              style={{ flex: 1, minHeight: 44, background: "#00C89618", border: "1px solid #00C89650", borderRadius: 10, color: "#00C896", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                              ✓ Остання
+                            </button>
+                          )}
+                          <a href={"https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(task.title)}
+                            target="_blank" rel="noopener noreferrer"
+                            style={{ width: 44, minHeight: 44, background: "#00C89612", border: "1px solid #00C89630", borderRadius: 10, color: "#00C896", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>📅</a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {filtered.length === 0 && <div style={{ textAlign: "center", color: "#555", padding: "40px 0", fontSize: 14 }}>Немає активних задач 🎉</div>}
+                </div>
+
+                {done.length > 0 && (
+                  <div style={{ marginTop: 24 }}>
+                    <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Виконані ({done.length})</div>
+                    {done.map(task => (
+                      <div key={task.id} style={{ background: "#1A1A2E50", border: "1px solid #ffffff08", borderRadius: 10, padding: "10px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ color: "#00C896" }}>✓</span>
+                        <span style={{ fontSize: 14, textDecoration: "line-through", color: "#555", flex: 1 }}>{task.title}</span>
+                        <span style={{ fontSize: 11, color: "#555" }}>{CATEGORIES[task.category].label}</span>
+                        <button onClick={() => { setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: false } : t)); setLog(prev => prev.filter(l => l.taskId !== task.id)); }}
+                          style={{ background: "transparent", border: "1px solid #ffffff15", borderRadius: 8, color: "#8888AA", padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>↩</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {view === "chart" && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>Продуктивність</div>
+                  <button onClick={() => setLog([])} style={{ background: "transparent", border: "1px solid #ffffff15", borderRadius: 8, color: "#555", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Очистити</button>
+                </div>
+                <div style={{ fontSize: 12, color: "#8888AA", marginBottom: 16 }}>Останні 14 днів · натисни на день</div>
+
+                <div style={{ display: "flex", gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
+                  {Object.entries(CATEGORIES).map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <div style={{ width: 9, height: 9, borderRadius: 2, background: v.color }} />
+                      <span style={{ fontSize: 11, color: "#8888AA" }}>{v.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ background: "#1A1A2E", borderRadius: 16, padding: "16px 12px", border: "1px solid #ffffff08" }}>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 140 }}>
+                    {dayStats.map(({ day, total, byCategory }) => {
+                      const isToday = day === formatDate(new Date());
+                      const isSelected = selectedDay === day;
+                      const segments = Object.keys(CATEGORIES).map(c => ({ cat: c, val: byCategory[c] || 0, pct: total > 0 ? ((byCategory[c] || 0) / maxDay) * 100 : 0 }));
+                      return (
+                        <div key={day} onClick={() => total > 0 && setSelectedDay(isSelected ? null : day)}
+                          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: total > 0 ? "pointer" : "default" }}>
+                          <div style={{ width: "100%", height: 120, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1, borderRadius: 3, outline: isSelected ? "2px solid #A09FFF" : "none" }}>
+                            {segments.filter(s => s.val > 0).map(s => (
+                              <div key={s.cat} style={{ width: "100%", height: s.pct + "%", background: CATEGORIES[s.cat].color, borderRadius: 2, opacity: isToday ? 1 : 0.7, minHeight: 3 }} />
+                            ))}
+                            {total === 0 && <div style={{ width: "100%", height: 3, background: "#ffffff08", borderRadius: 2 }} />}
+                          </div>
+                          <div style={{ fontSize: 8, color: (isToday || isSelected) ? "#A09FFF" : "#555", fontWeight: (isToday || isSelected) ? 700 : 400, textAlign: "center" }}>
+                            {new Date(day + "T12:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "numeric" }).replace(/\./g, "/")}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {selectedDay && (() => {
+                  const dayEntries = log.filter(l => l.date === selectedDay);
+                  const dayLabel = new Date(selectedDay + "T12:00:00").toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" });
+                  return (
+                    <div style={{ background: "#1A1A2E", borderRadius: 14, padding: 14, marginTop: 10, border: "1px solid #A09FFF40" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#A09FFF", textTransform: "capitalize" }}>{dayLabel}</div>
+                        <div style={{ fontSize: 11, color: "#8888AA" }}>{dayEntries.length} сесій</div>
+                      </div>
+                      {dayEntries.map(entry => {
+                        const task = tasks.find(t => t.id === entry.taskId) || INITIAL_TASKS.find(t => t.id === entry.taskId);
+                        if (!task) return null;
+                        const cat = CATEGORIES[task.category];
+                        return (
+                          <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: "1px solid #ffffff08" }}>
+                            <div style={{ width: 7, height: 7, borderRadius: 2, background: cat.color, flexShrink: 0 }} />
+                            <div style={{ flex: 1, fontSize: 13 }}>{task.title}</div>
+                            <select value={entry.date}
+                              onChange={e => setLog(prev => prev.map(l => l.id === entry.id ? { ...l, date: e.target.value } : l))}
+                              style={{ background: "#0F0F14", border: "1px solid #ffffff15", borderRadius: 6, color: "#8888AA", fontSize: 10, padding: "3px 4px", cursor: "pointer" }}>
+                              {days.map(d => (
+                                <option key={d} value={d}>
+                                  {new Date(d + "T12:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "numeric" }).replace(/\./g, "/")}
+                                </option>
+                              ))}
+                            </select>
+                            <button onClick={() => setLog(prev => prev.filter(l => l.id !== entry.id))}
+                              style={{ width: 28, height: 28, borderRadius: 6, background: "transparent", border: "1px solid #ffffff10", color: "#555", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✕</button>
+                          </div>
+                        );
+                      })}
+                      {dayEntries.length === 0 && <div style={{ fontSize: 12, color: "#555" }}>Немає сесій</div>}
+                    </div>
+                  );
+                })()}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 14 }}>
+                  {[
+                    { label: "Всього", value: log.length },
+                    { label: "Сьогодні", value: todayCount },
+                    { label: "Рекорд", value: Math.max(...dayStats.map(d => d.total), 0) },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: "#1A1A2E", borderRadius: 12, padding: "12px 10px", border: "1px solid #ffffff08", textAlign: "center" }}>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: "#A09FFF" }}>{s.value}</div>
+                      <div style={{ fontSize: 10, color: "#8888AA", marginTop: 2 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+                  {Object.entries(CATEGORIES).map(([k, v]) => {
+                    const count = log.filter(l => l.category === k).length;
+                    const pct = log.length > 0 ? (count / log.length) * 100 : 0;
+                    return (
+                      <div key={k} style={{ background: "#1A1A2E", borderRadius: 10, padding: "10px 14px", border: "1px solid #ffffff08" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                          <span style={{ fontSize: 12, color: v.color, fontWeight: 600 }}>{v.label}</span>
+                          <span style={{ fontSize: 12, color: "#8888AA" }}>{count} сесій</span>
+                        </div>
+                        <div style={{ background: "#ffffff08", borderRadius: 3, height: 5 }}>
+                          <div style={{ background: v.color, width: pct + "%", height: "100%", borderRadius: 3 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {editTask && (
+            <div style={{ position: "fixed", inset: 0, background: "#00000088", zIndex: 100, display: "flex", alignItems: "flex-end" }} onClick={() => setEditTask(null)}>
+              <div style={{ background: "#1A1A2E", borderRadius: "20px 20px 0 0", padding: 20, width: "100%", border: "1px solid #ffffff15", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }} onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Редагувати задачу</div>
+                <input value={editTask.title} onChange={e => setEditTask(p => ({...p, title: e.target.value}))}
+                  style={{ width: "100%", background: "#0F0F14", border: "1px solid #ffffff15", borderRadius: 10, padding: "12px 14px", color: "#E8E8F0", fontSize: 15, marginBottom: 12, outline: "none" }} />
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 7, textTransform: "uppercase", letterSpacing: 1 }}>Категорія</div>
+                  <div style={{ display: "flex", gap: 7 }}>
+                    {Object.entries(CATEGORIES).map(([k, v]) => (
+                      <button key={k} onClick={() => setEditTask(p => ({...p, category: k}))} style={{ flex: 1, background: editTask.category === k ? v.light : "transparent", border: "1px solid " + (editTask.category === k ? v.color : "#ffffff15"), borderRadius: 9, color: editTask.category === k ? v.color : "#8888AA", padding: "8px 2px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>● {v.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 7, textTransform: "uppercase", letterSpacing: 1 }}>Тип</div>
+                  <div style={{ display: "flex", gap: 7 }}>
+                    {Object.entries(TASK_TYPES).map(([k, v]) => (
+                      <button key={k} onClick={() => setEditTask(p => ({...p, type: k}))} style={{ flex: 1, background: editTask.type === k ? "#ffffff15" : "transparent", border: "1px solid " + (editTask.type === k ? "#ffffff40" : "#ffffff15"), borderRadius: 9, color: editTask.type === k ? "#E8E8F0" : "#8888AA", padding: "8px 2px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 7, textTransform: "uppercase", letterSpacing: 1 }}>Час (хв)</div>
+                  <input type="number" min="5" step="5" value={editTask.estimatedMin} onChange={e => setEditTask(p => ({...p, estimatedMin: +e.target.value}))}
+                    style={{ width: 90, background: "#0F0F14", border: "1px solid #ffffff15", borderRadius: 9, padding: "8px 12px", color: "#E8E8F0", fontSize: 14, outline: "none" }} />
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={saveEdit} style={{ flex: 1, minHeight: 46, background: "linear-gradient(135deg, #6C63FF, #8B5CF6)", border: "none", borderRadius: 12, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Зберегти</button>
+                  <button onClick={() => setEditTask(null)} style={{ flex: 1, minHeight: 46, background: "transparent", border: "1px solid #ffffff15", borderRadius: 12, color: "#8888AA", fontSize: 14, cursor: "pointer" }}>Скасувати</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(Tracker));
+  </script>
+</body>
+</html>
