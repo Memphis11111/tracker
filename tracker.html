@@ -9,7 +9,7 @@
   <title>Мій трекер</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    body { background: #0F0F14; color: #E8E8F0; font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif; padding-bottom: env(safe-area-inset-bottom); }
+    body { background: #0F0F14; color: #E8E8F0; font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif; }
     button, input, select { font-family: inherit; }
     select option { background: #1A1A2E; color: #E8E8F0; }
   </style>
@@ -34,48 +34,99 @@
     };
 
     function formatDate(d) { return d.toISOString().split("T")[0]; }
-    function getLast14Days() {
+
+    function getMonthKey(d) { return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+
+    function getDays(mode, offset) {
       const days = [];
-      for (let i = 13; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(formatDate(d)); }
+      const now = new Date();
+      if (mode === "14") {
+        const end = new Date(now);
+        end.setDate(now.getDate() - offset * 14);
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date(end); d.setDate(end.getDate() - i); days.push(formatDate(d));
+        }
+      } else if (mode === "month") {
+        const ref = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+        const daysInMonth = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate();
+        for (let i = 1; i <= daysInMonth; i++) days.push(formatDate(new Date(ref.getFullYear(), ref.getMonth(), i)));
+      } else {
+        // year mode: return 12 month-keys for the year
+        const year = now.getFullYear() - offset;
+        for (let m = 0; m < 12; m++) days.push(year+"-"+String(m+1).padStart(2,"0"));
+      }
       return days;
     }
 
+    function getYearMonthStats(log, year) {
+      return Array.from({length: 12}, (_, m) => {
+        const prefix = year+"-"+String(m+1).padStart(2,"0");
+        const entries = log.filter(l => l.date.startsWith(prefix));
+        const byCategory = {};
+        Object.keys(CATEGORIES).forEach(c => { byCategory[c] = entries.filter(e => e.category===c).length; });
+        return { monthKey: prefix, total: entries.length, byCategory, label: new Date(year, m, 1).toLocaleDateString("uk-UA", { month: "short" }) };
+      });
+    }
+
+    function dAgo(n) { const x = new Date(); x.setDate(x.getDate() - n); return formatDate(x); }
+    const TODAY = formatDate(new Date());
+
     const INITIAL_TASKS = [
-      { id: 1001, title: "Кліп гематома", category: "creative", type: "big", done: true, sessions: 2, estimatedMin: 90 },
-      { id: 1002, title: "Рефи попсарю", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 30 },
-      { id: 1003, title: "Курс зйомка", category: "creative", type: "big", done: true, sessions: 1, estimatedMin: 60 },
-      { id: 1005, title: "Вішліст ДН", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 20 },
-      { id: 1006, title: "Організувати ДН", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 45 },
-      { id: 1007, title: "Фіти список", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 30 },
-      { id: 1009, title: "TikTok", category: "creative", type: "recurring", done: false, sessions: 0, estimatedMin: 30 },
-      { id: 1010, title: "Текст на новий трек", category: "creative", type: "big", done: false, sessions: 1, estimatedMin: 60 },
-      { id: 1011, title: "Стоматолог", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 15 },
-      { id: 1012, title: "Погенерити план розвитку / контент план / образ", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 60 },
+      // ---- АКТИВНІ (13) ----
+      { id: 2010, title: "інвест в золото розібратись", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 2012, title: "скинути треки бекспейсу на концертники", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 2011, title: "замовити їжу на дн, спитати по посуду", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 30 },
       { id: 1013, title: "Сковорідка", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 30 },
       { id: 1014, title: "Вокал", category: "creative", type: "big", done: false, sessions: 1, estimatedMin: 60 },
-      { id: 1016, title: "Claude + YouTube", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1016, title: "Claude + YouTube", category: "life", type: "big", done: false, sessions: 1, estimatedMin: 30 },
       { id: 1017, title: "Запис до гастро", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 15 },
-      { id: 1018, title: "Фізкультура", category: "life", type: "recurring", done: false, sessions: 2, estimatedMin: 60 },
+      { id: 1018, title: "Фізкультура", category: "life", type: "recurring", done: false, sessions: 4, estimatedMin: 60 },
+      { id: 1002, title: "Рефи попсарю", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1009, title: "TikTok", category: "creative", type: "recurring", done: false, sessions: 0, estimatedMin: 30 },
+      { id: 1010, title: "Текст на новий трек", category: "creative", type: "big", done: false, sessions: 3, estimatedMin: 60 },
+      { id: 1011, title: "Стоматолог", category: "life", type: "once", done: false, sessions: 0, estimatedMin: 15 },
+      { id: 1012, title: "Погенерити план розвитку / контент план / образ", category: "creative", type: "once", done: false, sessions: 0, estimatedMin: 60 },
+      // ---- ВИКОНАНІ (10) ----
+      { id: 1001, title: "Кліп гематома", category: "creative", type: "big", done: true, sessions: 2, estimatedMin: 90 },
+      { id: 1003, title: "Курс зйомка", category: "creative", type: "big", done: true, sessions: 1, estimatedMin: 60 },
+      { id: 1006, title: "Організувати ДН", category: "life", type: "once", done: true, sessions: 0, estimatedMin: 45 },
+      { id: 1007, title: "Фіти список", category: "creative", type: "once", done: true, sessions: 0, estimatedMin: 30 },
+      { id: 2001, title: "гітхаб", category: "life", type: "once", done: true, sessions: 0, estimatedMin: 30 },
+      { id: 2002, title: "Обрати llm для фрілансерів", category: "work", type: "once", done: true, sessions: 0, estimatedMin: 30 },
+      { id: 2003, title: "спросить у Карины з е", category: "life", type: "once", done: true, sessions: 0, estimatedMin: 15 },
+      { id: 2004, title: "замовити бусі щітки", category: "life", type: "once", done: true, sessions: 0, estimatedMin: 15 },
+      { id: 2005, title: "Закинути проект xravial", category: "creative", type: "once", done: true, sessions: 0, estimatedMin: 30 },
+      { id: 2006, title: "перенести Ютуб", category: "life", type: "once", done: true, sessions: 0, estimatedMin: 20 },
     ];
 
-    function getInitialLog() {
-      const now = new Date();
-      const diffToMon = (now.getDay() + 6) % 7;
-      const mon = new Date(now); mon.setDate(now.getDate() - diffToMon);
-      const tue = new Date(mon); tue.setDate(mon.getDate() + 1);
-      const wed = new Date(mon); wed.setDate(mon.getDate() + 2);
-      const monStr = formatDate(mon);
-      const tueStr = formatDate(tue);
-      const wedStr = formatDate(wed);
-      return [
-        { date: monStr, taskId: 1003, category: "creative", id: monStr + "-1003" },
-        { date: tueStr, taskId: 1001, category: "creative", id: tueStr + "-1001" },
-        { date: tueStr, taskId: 1018, category: "life", id: tueStr + "-1018" },
-        { date: wedStr, taskId: 1010, category: "creative", id: wedStr + "-1010" },
-        { date: wedStr, taskId: 1001, category: "creative", id: wedStr + "-1001-2" },
-        { date: wedStr, taskId: 1018, category: "life", id: wedStr + "-1018-2" },
-      ];
-    }
+    // Лог: всього 19, Робота=1, Життя=10, Творчість=8
+    // З графіку: активність 25/04, 28/04, 29/04, 30/04, 01/05
+    const INITIAL_LOG = [
+      // 25/04 (dAgo(6)): life=1 (Фізкультура), creative=1 (Вокал)
+      { date: dAgo(6), taskId: 1018, category: "life", id: dAgo(6)+"-1018-1" },
+      { date: dAgo(6), taskId: 1014, category: "creative", id: dAgo(6)+"-1014-1" },
+      // 28/04 (dAgo(3)): creative=2 (Кліп гематома, Текст), life=2 (Фізкультура, гітхаб)
+      { date: dAgo(3), taskId: 1001, category: "creative", id: dAgo(3)+"-1001-1" },
+      { date: dAgo(3), taskId: 1010, category: "creative", id: dAgo(3)+"-1010-1" },
+      { date: dAgo(3), taskId: 1018, category: "life", id: dAgo(3)+"-1018-2" },
+      { date: dAgo(3), taskId: 2001, category: "life", id: dAgo(3)+"-2001-1" },
+      // 29/04 (dAgo(2)): creative=2 (Курс зйомка, Текст), life=2 (Фізкультура, бусі щітки)
+      { date: dAgo(2), taskId: 1003, category: "creative", id: dAgo(2)+"-1003-1" },
+      { date: dAgo(2), taskId: 1010, category: "creative", id: dAgo(2)+"-1010-2" },
+      { date: dAgo(2), taskId: 1018, category: "life", id: dAgo(2)+"-1018-3" },
+      { date: dAgo(2), taskId: 2004, category: "life", id: dAgo(2)+"-2004-1" },
+      // 30/04 (dAgo(1)): work=1 (llm), creative=2 (Кліп гематома, Текст), life=3 (Фізкультура, Карина, перенести Ютуб)
+      { date: dAgo(1), taskId: 2002, category: "work", id: dAgo(1)+"-2002-1" },
+      { date: dAgo(1), taskId: 1001, category: "creative", id: dAgo(1)+"-1001-2" },
+      { date: dAgo(1), taskId: 1010, category: "creative", id: dAgo(1)+"-1010-3" },
+      { date: dAgo(1), taskId: 1018, category: "life", id: dAgo(1)+"-1018-4" },
+      { date: dAgo(1), taskId: 2003, category: "life", id: dAgo(1)+"-2003-1" },
+      { date: dAgo(1), taskId: 2006, category: "life", id: dAgo(1)+"-2006-1" },
+      // 01/05 (today): life=1 (Claude + YouTube), creative=1 (xravial), life+1 (спосить)
+      { date: TODAY, taskId: 1016, category: "life", id: TODAY+"-1016-1" },
+      { date: TODAY, taskId: 2005, category: "creative", id: TODAY+"-2005-1" },
+      { date: TODAY, taskId: 2006, category: "life", id: TODAY+"-2006-2" },
+    ];
 
     function Tracker() {
       const [tasks, setTasks] = useState([]);
@@ -88,12 +139,16 @@
       const [filterType, setFilterType] = useState("all");
       const [editTask, setEditTask] = useState(null);
       const [selectedDay, setSelectedDay] = useState(null);
+      const [chartMode, setChartMode] = useState("14");
+      const [showImport, setShowImport] = useState(false);
+      const [importText, setImportText] = useState("");
+      const [chartOffset, setChartOffset] = useState(0);
 
-      const days = getLast14Days();
+      const days = useMemo(() => getDays(chartMode, chartOffset), [chartMode, chartOffset]);
 
       useEffect(() => {
         try { const t = localStorage.getItem("tracker-tasks"); setTasks(t ? JSON.parse(t) : INITIAL_TASKS); } catch { setTasks(INITIAL_TASKS); }
-        try { const l = localStorage.getItem("tracker-log"); setLog(l ? JSON.parse(l) : getInitialLog()); } catch { setLog(getInitialLog()); }
+        try { const l = localStorage.getItem("tracker-log"); setLog(l ? JSON.parse(l) : INITIAL_LOG); } catch { setLog(INITIAL_LOG); }
         setLoaded(true);
       }, []);
 
@@ -108,25 +163,47 @@
         } catch(e) { alert("Помилка: " + e.message); }
       }
 
+      function exportData() {
+        const data = JSON.stringify({ tasks, log }, null, 2);
+        const blob = new Blob([data], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "tracker-backup.json"; a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function importData(text) {
+        try {
+          const data = JSON.parse(text);
+          if (!data.tasks || !data.log) throw new Error("Невірний формат");
+          setTasks(data.tasks);
+          setLog(data.log);
+          localStorage.setItem("tracker-tasks", JSON.stringify(data.tasks));
+          localStorage.setItem("tracker-log", JSON.stringify(data.log));
+          setSaved(true);
+          setShowImport(false);
+          alert("✅ Дані імпортовано!");
+        } catch(e) { alert("Помилка: " + e.message); }
+      }
+
       const dayStats = useMemo(() => days.map(day => {
         const entries = log.filter(l => l.date === day);
         const byCategory = {};
         Object.keys(CATEGORIES).forEach(c => { byCategory[c] = entries.filter(e => e.category === c).length; });
         return { day, total: entries.length, byCategory };
-      }), [log]);
+      }), [log, days]);
 
       const maxDay = Math.max(...dayStats.map(d => d.total), 1);
 
       function logSession(task) {
-        const today = formatDate(new Date());
-        setLog(prev => [...prev, { date: today, taskId: task.id, category: task.category, id: today + "-" + Date.now() }]);
-        if (task.type === "once") setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: true } : t));
-        else setTasks(prev => prev.map(t => t.id === task.id ? { ...t, sessions: t.sessions + 1 } : t));
+        setLog(prev => [...prev, { date: TODAY, taskId: task.id, category: task.category, id: TODAY+"-"+Date.now() }]);
+        if (task.type === "once") setTasks(prev => prev.map(t => t.id === task.id ? {...t, done: true} : t));
+        else setTasks(prev => prev.map(t => t.id === task.id ? {...t, sessions: t.sessions+1} : t));
       }
 
       function addTask() {
         if (!newTask.title.trim()) return;
-        setTasks(prev => [...prev, { ...newTask, id: Date.now(), done: false, sessions: 0 }]);
+        setTasks(prev => [...prev, {...newTask, id: Date.now(), done: false, sessions: 0}]);
         setNewTask({ title: "", category: "work", type: "once", estimatedMin: 30 });
         setView("tasks");
       }
@@ -141,12 +218,12 @@
 
       const filtered = tasks.filter(t => (filterCat === "all" || t.category === filterCat) && (filterType === "all" || t.type === filterType) && !t.done);
       const done = tasks.filter(t => t.done);
-      const todayCount = log.filter(l => l.date === formatDate(new Date())).length;
+      const todayCount = log.filter(l => l.date === TODAY).length;
 
       if (!loaded) return null;
 
       return (
-        <div style={{ minHeight: "100vh", background: "#0F0F14", color: "#E8E8F0" }}>
+        <div style={{ minHeight: "100vh", background: "#0F0F14", color: "#E8E8F0", paddingBottom: "env(safe-area-inset-bottom)" }}>
 
           <div style={{ background: "linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)", borderBottom: "1px solid #ffffff10", padding: "20px 20px 14px", paddingTop: "calc(20px + env(safe-area-inset-top))", position: "sticky", top: 0, zIndex: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -165,7 +242,7 @@
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
               {[["tasks","Задачі"],["chart","Графік"]].map(([v,l]) => (
-                <button key={v} onClick={() => setView(v)} style={{ background: view === v ? "#6C63FF22" : "transparent", border: "1px solid " + (view === v ? "#6C63FF" : "#ffffff15"), borderRadius: 8, color: view === v ? "#A09FFF" : "#8888AA", padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 500 }}>{l}</button>
+                <button key={v} onClick={() => setView(v)} style={{ background: view===v ? "#6C63FF22" : "transparent", border: "1px solid "+(view===v ? "#6C63FF" : "#ffffff15"), borderRadius: 8, color: view===v ? "#A09FFF" : "#8888AA", padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 500 }}>{l}</button>
               ))}
             </div>
             {!saved && (
@@ -174,6 +251,10 @@
               </button>
             )}
             {saved && <div style={{ marginTop: 8, textAlign: "center", fontSize: 11, color: "#00C89688" }}>✓ Збережено</div>}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={exportData} style={{ flex: 1, minHeight: 40, background: "transparent", border: "1px solid #ffffff20", borderRadius: 10, color: "#8888AA", fontSize: 12, cursor: "pointer" }}>📤 Експорт</button>
+              <button onClick={() => setShowImport(true)} style={{ flex: 1, minHeight: 40, background: "transparent", border: "1px solid #ffffff20", borderRadius: 10, color: "#8888AA", fontSize: 12, cursor: "pointer" }}>📥 Імпорт</button>
+            </div>
           </div>
 
           <div style={{ padding: "16px 20px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
@@ -186,16 +267,16 @@
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Категорія</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {Object.entries(CATEGORIES).map(([k, v]) => (
-                      <button key={k} onClick={() => setNewTask(p => ({...p, category: k}))} style={{ flex: 1, background: newTask.category === k ? v.light : "transparent", border: "1px solid " + (newTask.category === k ? v.color : "#ffffff15"), borderRadius: 8, color: newTask.category === k ? v.color : "#8888AA", padding: "7px 2px", fontSize: 12, cursor: "pointer" }}>{v.label}</button>
+                    {Object.entries(CATEGORIES).map(([k,v]) => (
+                      <button key={k} onClick={() => setNewTask(p => ({...p, category: k}))} style={{ flex: 1, background: newTask.category===k ? v.light : "transparent", border: "1px solid "+(newTask.category===k ? v.color : "#ffffff15"), borderRadius: 8, color: newTask.category===k ? v.color : "#8888AA", padding: "7px 2px", fontSize: 12, cursor: "pointer" }}>{v.label}</button>
                     ))}
                   </div>
                 </div>
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Тип</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {Object.entries(TASK_TYPES).map(([k, v]) => (
-                      <button key={k} onClick={() => setNewTask(p => ({...p, type: k}))} style={{ flex: 1, background: newTask.type === k ? "#ffffff15" : "transparent", border: "1px solid " + (newTask.type === k ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: newTask.type === k ? "#E8E8F0" : "#8888AA", padding: "7px 2px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
+                    {Object.entries(TASK_TYPES).map(([k,v]) => (
+                      <button key={k} onClick={() => setNewTask(p => ({...p, type: k}))} style={{ flex: 1, background: newTask.type===k ? "#ffffff15" : "transparent", border: "1px solid "+(newTask.type===k ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: newTask.type===k ? "#E8E8F0" : "#8888AA", padding: "7px 2px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
                     ))}
                   </div>
                 </div>
@@ -214,15 +295,15 @@
             {view === "tasks" && (
               <>
                 <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => setFilterCat("all")} style={{ background: filterCat === "all" ? "#ffffff15" : "transparent", border: "1px solid " + (filterCat === "all" ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterCat === "all" ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Всі</button>
-                  {Object.entries(CATEGORIES).map(([k, v]) => (
-                    <button key={k} onClick={() => setFilterCat(k)} style={{ background: filterCat === k ? v.light : "transparent", border: "1px solid " + (filterCat === k ? v.color : "#ffffff15"), borderRadius: 8, color: filterCat === k ? v.color : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>● {v.label}</button>
+                  <button onClick={() => setFilterCat("all")} style={{ background: filterCat==="all" ? "#ffffff15" : "transparent", border: "1px solid "+(filterCat==="all" ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterCat==="all" ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Всі</button>
+                  {Object.entries(CATEGORIES).map(([k,v]) => (
+                    <button key={k} onClick={() => setFilterCat(k)} style={{ background: filterCat===k ? v.light : "transparent", border: "1px solid "+(filterCat===k ? v.color : "#ffffff15"), borderRadius: 8, color: filterCat===k ? v.color : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>● {v.label}</button>
                   ))}
                 </div>
                 <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-                  <button onClick={() => setFilterType("all")} style={{ background: filterType === "all" ? "#ffffff15" : "transparent", border: "1px solid " + (filterType === "all" ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterType === "all" ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Всі типи</button>
-                  {Object.entries(TASK_TYPES).map(([k, v]) => (
-                    <button key={k} onClick={() => setFilterType(k)} style={{ background: filterType === k ? "#ffffff15" : "transparent", border: "1px solid " + (filterType === k ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterType === k ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
+                  <button onClick={() => setFilterType("all")} style={{ background: filterType==="all" ? "#ffffff15" : "transparent", border: "1px solid "+(filterType==="all" ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterType==="all" ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Всі типи</button>
+                  {Object.entries(TASK_TYPES).map(([k,v]) => (
+                    <button key={k} onClick={() => setFilterType(k)} style={{ background: filterType===k ? "#ffffff15" : "transparent", border: "1px solid "+(filterType===k ? "#ffffff40" : "#ffffff15"), borderRadius: 8, color: filterType===k ? "#E8E8F0" : "#8888AA", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
                   ))}
                 </div>
 
@@ -230,9 +311,9 @@
                   {filtered.map(task => {
                     const cat = CATEGORIES[task.category];
                     const type = TASK_TYPES[task.type];
-                    const todaySessions = log.filter(l => l.date === formatDate(new Date()) && l.taskId === task.id).length;
+                    const todaySessions = log.filter(l => l.date===TODAY && l.taskId===task.id).length;
                     return (
-                      <div key={task.id} style={{ background: "#1A1A2E", border: "1px solid " + cat.color + "30", borderLeft: "3px solid " + cat.color, borderRadius: 12, padding: "14px 14px" }}>
+                      <div key={task.id} style={{ background: "#1A1A2E", border: "1px solid "+cat.color+"30", borderLeft: "3px solid "+cat.color, borderRadius: 12, padding: "14px 14px" }}>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
                           <div style={{ width: 34, height: 34, borderRadius: 8, flexShrink: 0, background: cat.light, color: cat.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>{type.icon}</div>
                           <div style={{ flex: 1 }}>
@@ -250,18 +331,18 @@
                           </div>
                         </div>
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button onClick={() => logSession(task)} style={{ flex: 1, minHeight: 44, background: cat.color + "22", border: "1px solid " + cat.color + "50", borderRadius: 10, color: cat.color, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                          <button onClick={() => logSession(task)} style={{ flex: 1, minHeight: 44, background: cat.color+"22", border: "1px solid "+cat.color+"50", borderRadius: 10, color: cat.color, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                             {task.type === "once" ? "✓ Виконано" : "＋ Сесія"}
                           </button>
                           {task.type === "big" && (
-                            <button onClick={() => { logSession(task); setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: true } : t)); }}
+                            <button onClick={() => { logSession(task); setTasks(prev => prev.map(t => t.id===task.id ? {...t, done: true} : t)); }}
                               style={{ flex: 1, minHeight: 44, background: "#00C89618", border: "1px solid #00C89650", borderRadius: 10, color: "#00C896", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                               ✓ Остання
                             </button>
                           )}
-                          <a href={"https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(task.title)}
+                          <a href={"https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(task.title)}
                             target="_blank" rel="noopener noreferrer"
-                            style={{ width: 44, minHeight: 44, background: "#00C89612", border: "1px solid #00C89630", borderRadius: 10, color: "#00C896", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>📅</a>
+                            style={{ width: 44, minHeight: 44, background: "#ffffff08", border: "1px solid #ffffff12", borderRadius: 10, color: "#8888AA", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>📅</a>
                         </div>
                       </div>
                     );
@@ -276,9 +357,9 @@
                       <div key={task.id} style={{ background: "#1A1A2E50", border: "1px solid #ffffff08", borderRadius: 10, padding: "10px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10 }}>
                         <span style={{ color: "#00C896" }}>✓</span>
                         <span style={{ fontSize: 14, textDecoration: "line-through", color: "#555", flex: 1 }}>{task.title}</span>
-                        <span style={{ fontSize: 11, color: "#555" }}>{CATEGORIES[task.category].label}</span>
-                        <button onClick={() => { setTasks(prev => prev.map(t => t.id === task.id ? { ...t, done: false } : t)); setLog(prev => prev.filter(l => l.taskId !== task.id)); }}
-                          style={{ background: "transparent", border: "1px solid #ffffff15", borderRadius: 8, color: "#8888AA", padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>↩</button>
+                        <span style={{ fontSize: 11, color: "#555", flexShrink: 0 }}>{CATEGORIES[task.category].label}</span>
+                        <button onClick={() => { setTasks(prev => prev.map(t => t.id===task.id ? {...t, done: false} : t)); setLog(prev => prev.filter(l => l.taskId !== task.id)); }}
+                          style={{ background: "transparent", border: "1px solid #ffffff15", borderRadius: 8, color: "#8888AA", padding: "5px 10px", fontSize: 12, cursor: "pointer", flexShrink: 0 }}>↩</button>
                       </div>
                     ))}
                   </div>
@@ -288,14 +369,35 @@
 
             {view === "chart" && (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>Продуктивність</div>
                   <button onClick={() => setLog([])} style={{ background: "transparent", border: "1px solid #ffffff15", borderRadius: 8, color: "#555", padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Очистити</button>
                 </div>
-                <div style={{ fontSize: 12, color: "#8888AA", marginBottom: 16 }}>Останні 14 днів · натисни на день</div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                  <button onClick={() => { setChartMode("14"); setChartOffset(0); setSelectedDay(null); }}
+                    style={{ background: chartMode==="14" ? "#6C63FF22" : "transparent", border: "1px solid "+(chartMode==="14" ? "#6C63FF" : "#ffffff15"), borderRadius: 8, color: chartMode==="14" ? "#A09FFF" : "#8888AA", padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>14 днів</button>
+                  <button onClick={() => { setChartMode("month"); setChartOffset(0); setSelectedDay(null); }}
+                    style={{ background: chartMode==="month" ? "#6C63FF22" : "transparent", border: "1px solid "+(chartMode==="month" ? "#6C63FF" : "#ffffff15"), borderRadius: 8, color: chartMode==="month" ? "#A09FFF" : "#8888AA", padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Місяць</button>
+                  <button onClick={() => { setChartMode("year"); setChartOffset(0); setSelectedDay(null); }}
+                    style={{ background: chartMode==="year" ? "#6C63FF22" : "transparent", border: "1px solid "+(chartMode==="year" ? "#6C63FF" : "#ffffff15"), borderRadius: 8, color: chartMode==="year" ? "#A09FFF" : "#8888AA", padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 500 }}>Рік</button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => { setChartOffset(o => o+1); setSelectedDay(null); }}
+                    style={{ width: 36, height: 36, borderRadius: 8, background: "#ffffff08", border: "1px solid #ffffff15", color: "#8888AA", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+                  <div style={{ fontSize: 11, color: "#8888AA", minWidth: 80, textAlign: "center" }}>
+                    {chartMode === "14"
+                      ? (chartOffset === 0 ? "Зараз" : "-"+(chartOffset*14)+"д")
+                      : chartMode === "month"
+                        ? (() => { const x = new Date(); x.setMonth(x.getMonth()-chartOffset); return x.toLocaleDateString("uk-UA", { month: "long", year: "numeric" }); })()
+                        : (new Date().getFullYear() - chartOffset)
+                    }
+                  </div>
+                  <button onClick={() => { if (chartOffset > 0) { setChartOffset(o => o-1); setSelectedDay(null); } }}
+                    style={{ width: 36, height: 36, borderRadius: 8, background: chartOffset>0 ? "#ffffff08" : "transparent", border: "1px solid "+(chartOffset>0 ? "#ffffff15" : "#ffffff05"), color: chartOffset>0 ? "#8888AA" : "#333", fontSize: 18, cursor: chartOffset>0 ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+                </div>
 
                 <div style={{ display: "flex", gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
-                  {Object.entries(CATEGORIES).map(([k, v]) => (
+                  {Object.entries(CATEGORIES).map(([k,v]) => (
                     <div key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                       <div style={{ width: 9, height: 9, borderRadius: 2, background: v.color }} />
                       <span style={{ fontSize: 11, color: "#8888AA" }}>{v.label}</span>
@@ -304,32 +406,66 @@
                 </div>
 
                 <div style={{ background: "#1A1A2E", borderRadius: 16, padding: "16px 12px", border: "1px solid #ffffff08" }}>
+                  {chartMode === "year" ? (() => {
+                    const year = new Date().getFullYear() - chartOffset;
+                    const monthStats = getYearMonthStats(log, year);
+                    const maxM = Math.max(...monthStats.map(m => m.total), 1);
+                    const curMonth = new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0");
+                    return (
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 140 }}>
+                        {monthStats.map(({ monthKey, total, byCategory, label }) => {
+                          const isCur = monthKey === curMonth;
+                          const isSelected = selectedDay === monthKey;
+                          const segments = Object.keys(CATEGORIES).map(c => ({ cat: c, val: byCategory[c]||0, pct: total>0 ? ((byCategory[c]||0)/maxM)*100 : 0 }));
+                          return (
+                            <div key={monthKey} onClick={() => total>0 && setSelectedDay(isSelected ? null : monthKey)}
+                              style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: total>0 ? "pointer" : "default" }}>
+                              <div style={{ width: "100%", height: 120, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1, borderRadius: 3, outline: isSelected ? "2px solid #A09FFF" : "none" }}>
+                                {segments.filter(sg => sg.val>0).map(sg => (
+                                  <div key={sg.cat} style={{ width: "100%", height: sg.pct+"%", background: CATEGORIES[sg.cat].color, borderRadius: 2, opacity: isCur ? 1 : 0.7, minHeight: 3 }} />
+                                ))}
+                                {total === 0 && <div style={{ width: "100%", height: 3, background: "#ffffff08", borderRadius: 2 }} />}
+                              </div>
+                              <div style={{ fontSize: 8, color: (isCur||isSelected) ? "#A09FFF" : "#555", fontWeight: (isCur||isSelected) ? 700 : 400, textAlign: "center" }}>
+                                {label}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })() : (
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 140 }}>
                     {dayStats.map(({ day, total, byCategory }) => {
-                      const isToday = day === formatDate(new Date());
+                      const isToday = day === TODAY;
                       const isSelected = selectedDay === day;
-                      const segments = Object.keys(CATEGORIES).map(c => ({ cat: c, val: byCategory[c] || 0, pct: total > 0 ? ((byCategory[c] || 0) / maxDay) * 100 : 0 }));
+                      const segments = Object.keys(CATEGORIES).map(c => ({ cat: c, val: byCategory[c]||0, pct: total>0 ? ((byCategory[c]||0)/maxDay)*100 : 0 }));
                       return (
-                        <div key={day} onClick={() => total > 0 && setSelectedDay(isSelected ? null : day)}
-                          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: total > 0 ? "pointer" : "default" }}>
+                        <div key={day} onClick={() => total>0 && setSelectedDay(isSelected ? null : day)}
+                          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, cursor: total>0 ? "pointer" : "default" }}>
                           <div style={{ width: "100%", height: 120, display: "flex", flexDirection: "column", justifyContent: "flex-end", gap: 1, borderRadius: 3, outline: isSelected ? "2px solid #A09FFF" : "none" }}>
-                            {segments.filter(s => s.val > 0).map(s => (
-                              <div key={s.cat} style={{ width: "100%", height: s.pct + "%", background: CATEGORIES[s.cat].color, borderRadius: 2, opacity: isToday ? 1 : 0.7, minHeight: 3 }} />
+                            {segments.filter(sg => sg.val>0).map(sg => (
+                              <div key={sg.cat} style={{ width: "100%", height: sg.pct+"%", background: CATEGORIES[sg.cat].color, borderRadius: 2, opacity: isToday ? 1 : 0.7, minHeight: 3 }} />
                             ))}
                             {total === 0 && <div style={{ width: "100%", height: 3, background: "#ffffff08", borderRadius: 2 }} />}
                           </div>
-                          <div style={{ fontSize: 8, color: (isToday || isSelected) ? "#A09FFF" : "#555", fontWeight: (isToday || isSelected) ? 700 : 400, textAlign: "center" }}>
-                            {new Date(day + "T12:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "numeric" }).replace(/\./g, "/")}
+                          <div style={{ fontSize: 8, color: (isToday||isSelected) ? "#A09FFF" : "#555", fontWeight: (isToday||isSelected) ? 700 : 400, textAlign: "center" }}>
+                            {new Date(day+"T12:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "numeric" }).replace(/\./g, "/")}
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                  )}
                 </div>
 
                 {selectedDay && (() => {
-                  const dayEntries = log.filter(l => l.date === selectedDay);
-                  const dayLabel = new Date(selectedDay + "T12:00:00").toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" });
+                  const isMonthKey = selectedDay.length === 7;
+                  const dayEntries = isMonthKey ? log.filter(l => l.date.startsWith(selectedDay)) : log.filter(l => l.date === selectedDay);
+                  const dayLabel = isMonthKey
+                    ? new Date(selectedDay+"-01T12:00:00").toLocaleDateString("uk-UA", { month: "long", year: "numeric" })
+                    : new Date(selectedDay+"T12:00:00").toLocaleDateString("uk-UA", { weekday: "long", day: "numeric", month: "long" });
+                  const allDays = getDays("14", 0);
                   return (
                     <div style={{ background: "#1A1A2E", borderRadius: 14, padding: 14, marginTop: 10, border: "1px solid #A09FFF40" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
@@ -337,23 +473,20 @@
                         <div style={{ fontSize: 11, color: "#8888AA" }}>{dayEntries.length} сесій</div>
                       </div>
                       {dayEntries.map(entry => {
-                        const task = tasks.find(t => t.id === entry.taskId) || INITIAL_TASKS.find(t => t.id === entry.taskId);
+                        const task = tasks.find(t => t.id===entry.taskId) || INITIAL_TASKS.find(t => t.id===entry.taskId);
                         if (!task) return null;
                         const cat = CATEGORIES[task.category];
                         return (
                           <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: "1px solid #ffffff08" }}>
                             <div style={{ width: 7, height: 7, borderRadius: 2, background: cat.color, flexShrink: 0 }} />
                             <div style={{ flex: 1, fontSize: 13 }}>{task.title}</div>
-                            <select value={entry.date}
-                              onChange={e => setLog(prev => prev.map(l => l.id === entry.id ? { ...l, date: e.target.value } : l))}
+                            <select value={entry.date} onChange={e => setLog(prev => prev.map(l => l.id===entry.id ? {...l, date: e.target.value} : l))}
                               style={{ background: "#0F0F14", border: "1px solid #ffffff15", borderRadius: 6, color: "#8888AA", fontSize: 10, padding: "3px 4px", cursor: "pointer" }}>
-                              {days.map(d => (
-                                <option key={d} value={d}>
-                                  {new Date(d + "T12:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "numeric" }).replace(/\./g, "/")}
-                                </option>
+                              {allDays.map(dd => (
+                                <option key={dd} value={dd}>{new Date(dd+"T12:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "numeric" }).replace(/\./g, "/")}</option>
                               ))}
                             </select>
-                            <button onClick={() => setLog(prev => prev.filter(l => l.id !== entry.id))}
+                            <button onClick={() => setLog(prev => prev.filter(l => l.id!==entry.id))}
                               style={{ width: 28, height: 28, borderRadius: 6, background: "transparent", border: "1px solid #ffffff10", color: "#555", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✕</button>
                           </div>
                         );
@@ -377,9 +510,9 @@
                 </div>
 
                 <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 7 }}>
-                  {Object.entries(CATEGORIES).map(([k, v]) => {
-                    const count = log.filter(l => l.category === k).length;
-                    const pct = log.length > 0 ? (count / log.length) * 100 : 0;
+                  {Object.entries(CATEGORIES).map(([k,v]) => {
+                    const count = log.filter(l => l.category===k).length;
+                    const pct = log.length > 0 ? (count/log.length)*100 : 0;
                     return (
                       <div key={k} style={{ background: "#1A1A2E", borderRadius: 10, padding: "10px 14px", border: "1px solid #ffffff08" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
@@ -387,7 +520,7 @@
                           <span style={{ fontSize: 12, color: "#8888AA" }}>{count} сесій</span>
                         </div>
                         <div style={{ background: "#ffffff08", borderRadius: 3, height: 5 }}>
-                          <div style={{ background: v.color, width: pct + "%", height: "100%", borderRadius: 3 }} />
+                          <div style={{ background: v.color, width: pct+"%", height: "100%", borderRadius: 3 }} />
                         </div>
                       </div>
                     );
@@ -396,6 +529,25 @@
               </>
             )}
           </div>
+
+          {showImport && (
+            <div style={{ position: "fixed", inset: 0, background: "#00000088", zIndex: 100, display: "flex", alignItems: "flex-end" }} onClick={() => setShowImport(false)}>
+              <div style={{ background: "#1A1A2E", borderRadius: "20px 20px 0 0", padding: 20, width: "100%", border: "1px solid #ffffff15", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }} onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>📥 Імпорт даних</div>
+                <div style={{ fontSize: 12, color: "#8888AA", marginBottom: 12 }}>Встав сюди текст з файлу tracker-backup.json</div>
+                <textarea
+                  value={importText}
+                  onChange={e => setImportText(e.target.value)}
+                  placeholder='{"tasks":[...],"log":[...]}'
+                  style={{ width: "100%", height: 140, background: "#0F0F14", border: "1px solid #ffffff15", borderRadius: 10, padding: "10px 12px", color: "#E8E8F0", fontSize: 12, outline: "none", resize: "none" }}
+                />
+                <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                  <button onClick={() => importData(importText)} style={{ flex: 1, minHeight: 46, background: "linear-gradient(135deg, #6C63FF, #8B5CF6)", border: "none", borderRadius: 12, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>Імпортувати</button>
+                  <button onClick={() => { setShowImport(false); setImportText(""); }} style={{ flex: 1, minHeight: 46, background: "transparent", border: "1px solid #ffffff15", borderRadius: 12, color: "#8888AA", fontSize: 14, cursor: "pointer" }}>Скасувати</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {editTask && (
             <div style={{ position: "fixed", inset: 0, background: "#00000088", zIndex: 100, display: "flex", alignItems: "flex-end" }} onClick={() => setEditTask(null)}>
@@ -406,16 +558,16 @@
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 7, textTransform: "uppercase", letterSpacing: 1 }}>Категорія</div>
                   <div style={{ display: "flex", gap: 7 }}>
-                    {Object.entries(CATEGORIES).map(([k, v]) => (
-                      <button key={k} onClick={() => setEditTask(p => ({...p, category: k}))} style={{ flex: 1, background: editTask.category === k ? v.light : "transparent", border: "1px solid " + (editTask.category === k ? v.color : "#ffffff15"), borderRadius: 9, color: editTask.category === k ? v.color : "#8888AA", padding: "8px 2px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>● {v.label}</button>
+                    {Object.entries(CATEGORIES).map(([k,v]) => (
+                      <button key={k} onClick={() => setEditTask(p => ({...p, category: k}))} style={{ flex: 1, background: editTask.category===k ? v.light : "transparent", border: "1px solid "+(editTask.category===k ? v.color : "#ffffff15"), borderRadius: 9, color: editTask.category===k ? v.color : "#8888AA", padding: "8px 2px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>● {v.label}</button>
                     ))}
                   </div>
                 </div>
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: "#8888AA", marginBottom: 7, textTransform: "uppercase", letterSpacing: 1 }}>Тип</div>
                   <div style={{ display: "flex", gap: 7 }}>
-                    {Object.entries(TASK_TYPES).map(([k, v]) => (
-                      <button key={k} onClick={() => setEditTask(p => ({...p, type: k}))} style={{ flex: 1, background: editTask.type === k ? "#ffffff15" : "transparent", border: "1px solid " + (editTask.type === k ? "#ffffff40" : "#ffffff15"), borderRadius: 9, color: editTask.type === k ? "#E8E8F0" : "#8888AA", padding: "8px 2px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
+                    {Object.entries(TASK_TYPES).map(([k,v]) => (
+                      <button key={k} onClick={() => setEditTask(p => ({...p, type: k}))} style={{ flex: 1, background: editTask.type===k ? "#ffffff15" : "transparent", border: "1px solid "+(editTask.type===k ? "#ffffff40" : "#ffffff15"), borderRadius: 9, color: editTask.type===k ? "#E8E8F0" : "#8888AA", padding: "8px 2px", fontSize: 12, cursor: "pointer" }}>{v.icon} {v.label}</button>
                     ))}
                   </div>
                 </div>
